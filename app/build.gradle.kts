@@ -29,11 +29,13 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    androidComponents {
-        onVariants { variant ->
-            variant.outputs.forEach { output ->
-                output.outputFileName.set("Control_Material-v1.0-${variant.name}.apk")
-            }
+} // <--- Aquí se cierra correctamente el bloque de android { }
+
+// Y el bloque de components va AQUÍ FUERA, independiente
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            output.outputFileName.set("Control_Material-v1.0-${variant.name}.apk")
         }
     }
 }
