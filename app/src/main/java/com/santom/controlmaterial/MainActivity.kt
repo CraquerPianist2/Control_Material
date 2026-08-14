@@ -18,6 +18,8 @@ class MainActivity : AppCompatActivity() {
         webSettings.javaScriptEnabled = true
         webSettings.domStorageEnabled = true
         webSettings.allowFileAccess = true
+        webSettings.useWideViewPort = true
+        webSettings.loadWithOverviewMode = true
 
         webView.webViewClient = WebViewClient()
 
