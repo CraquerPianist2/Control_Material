@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Stock - Santom</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: sans-serif; -webkit-tap-highlight-color: transparent; }
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+    </style>
+</head>
+<body class="min-h-screen p-4 max-w-md mx-auto">
+
+<header class="flex items-center justify-between pb-4 mb-6 border-b border-slate-800">
+    <div>
+        <h1 class="text-xl font-bold text-white">Control de Material</h1>
+        <p class="text-slate-400 text-xs">Santom Field System</p>
+    </div>
+    <button onclick="resetStock()" class="p-2 text-slate-400 hover:text-red-400 border border-slate-700 rounded-xl"><i class="fa-solid fa-rotate-right"></i></button>
+</header>
+
+<main id="inventoryContainer" class="space-y-6 pb-10"></main>
+
+<script>
+    const inventoryStructure = [
+        {
+            mainCategory: "Papelería",
+            icon: "fa-folder-open",
+            color: "text-blue-400",
+            subgroups: [
+                { subCategory: "Visitas", items: ["Hojas de referencias", "Rasca Rasca", "Bonos de Hotel", "Buddies"] },
+                { subCategory: "Calle", items: ["Hojas de carding", "Flyers"] },
+                { subCategory: "Compras", items: ["Contrato de compra", "Afiliación de datos", "Hoja Azul", "Hojas de pedidos de café"] }
+            ]
+        },
+        {
+            mainCategory: "Café",
+            icon: "fa-mug-hot",
+            color: "text-amber-400",
+            subgroups: [
+                { subCategory: "", items: ["Intenso", "Arábico", "Gingseng", "Cortado", "Espumoso", "Irlandes", "Chocolate", "Descafeinado"] }
+            ]
+        }
+    ];
+
+    let stock = JSON.parse(localStorage.getItem('santom_stock')) || {};
+    let ozoneData = JSON.parse(localStorage.getItem('santom_ozone')) || { timestamp: null };
+    let emergencies = JSON.parse(localStorage.getItem('santom_emergencies')) || { tds: false, electrolisis: false, cafetera: false };
+
+    function renderInventory() {
+        const container = document.getElementById('inventoryContainer');
+        container.innerHTML = '';
+
+        // 1. Renderizar Papelería y Café
+        inventoryStructure.forEach(main => {
+            let mainDiv = document.createElement('div');
+            mainDiv.className = "bg-slate-800/50 border border-slate-700/60 rounded-2xl p-4 space-y-4";
+
+            let html = `
+                <div class="flex items-center gap-2 pb-2 border-b border-slate-700/50">
+                    <i class="fa-solid ${main.icon} ${main.color} text-base"></i>
+                    <h2 class="text-base font-bold uppercase tracking-wider text-white">${main.mainCategory}</h2>
+                </div>
+            `;
+
+            main.subgroups.forEach(sub => {
+                if (sub.subCategory) {
+                    html += `<div class="text-xs font-semibold text-blue-300 uppercase tracking-wide mt-3 mb-1 pl-1">${sub.subCategory}</div>`;
+                }
+                html += `<div class="space-y-2">`;
+
+                sub.items.forEach(name => {
+                    let id = name.toLowerCase().replace(/[\s]+/g, '-');
+                    if (stock[id] === undefined) stock[id] = 0;
+
+                    html += `
+                        <div class="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-2.5 rounded-xl">
+                            <span class="text-xs font-medium text-slate-200">${name}</span>
+                            <div class="flex items-center gap-1">
+                                <button onclick="updateValue('${id}', -1)" class="w-8 h-8 bg-slate-800 hover:bg-slate-700 text-red-400 rounded-lg border border-slate-700 flex items-center justify-center font-bold text-xs"><i class="fa-solid fa-minus"></i></button>
+                                <input type="number" id="input-${id}" value="${stock[id]}" onchange="manualInput('${id}')" class="w-10 text-center bg-transparent font-bold text-sm outline-none text-white">
+                                <button onclick="updateValue('${id}', 1)" class="w-8 h-8 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-lg border border-slate-700 flex items-center justify-center font-bold text-xs"><i class="fa-solid fa-plus"></i></button>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            });
+
+            mainDiv.innerHTML = html;
+            container.appendChild(mainDiv);
+        });
+
+        // 2. Renderizar el apartado AGUA (Purificada + Ozono)
+        let waterDiv = document.createElement('div');
+        waterDiv.className = "bg-slate-800/50 border border-slate-700/60 rounded-2xl p-4 space-y-4";
+
+        if (stock['agua-purificada'] === undefined) stock['agua-purificada'] = 1;
+        let isPurifiedFull = stock['agua-purificada'] === 1;
+
+        waterDiv.innerHTML = `
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-700/50">
+                <i class="fa-solid fa-droplet text-cyan-400 text-base"></i>
+                <h2 class="text-base font-bold uppercase tracking-wider text-white">Agua</h2>
+            </div>
+
+            <!-- Agua Purificada -->
+            <div>
+                <div class="text-xs font-semibold text-cyan-300 uppercase tracking-wide mb-2 pl-1">Agua Purificada</div>
+                <div class="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-3 rounded-xl">
+                    <span class="text-xs font-medium text-slate-200">Estado de la botella</span>
+                    <button onclick="togglePurified()" class="px-4 py-2 rounded-xl text-xs font-bold transition-all border ${isPurifiedFull ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-red-500/20 text-red-400 border-red-400/40'}">
+                        ${isPurifiedFull ? '<i class="fa-solid fa-circle-check mr-1.5"></i> Llena' : '<i class="fa-solid fa-circle-xmark mr-1.5"></i> Vacía'}
+                    </button>
+                </div>
+            </div>
+
+            <!-- Agua con Ozono -->
+            <div>
+                <div class="text-xs font-semibold text-cyan-300 uppercase tracking-wide mt-4 mb-2 pl-1">Agua con Ozono (Pulverizador)</div>
+                <div class="bg-slate-900/60 border border-slate-800 p-3 rounded-xl space-y-3">
+                    <div class="flex items-center justify-between">
+                        <button onclick="refillOzone()" class="px-3 py-2 bg-cyan-600/35 hover:bg-cyan-600/50 text-cyan-300 border border-cyan-500/40 rounded-xl text-xs font-bold transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-rotate"></i> Recargado
+                        </button>
+                        <div class="text-right">
+                            <span id="ozone-timer" class="text-xs font-mono font-bold text-white">08:00:00</span>
+                            <span class="text-[10px] text-slate-400 block">Restante</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+                        <span class="text-slate-400">Concentración: <strong id="ozone-percent" class="text-cyan-400">100%</strong></span>
+                        <span id="ozone-status" class="px-2 py-0.5 rounded-md font-semibold">Calculando...</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        container.appendChild(waterDiv);
+        updateOzoneUI();
+
+        // 3. Renderizar el nuevo apartado: ESTADO DE EQUIPOS / EMERGENCIAS
+        let emergencyDiv = document.createElement('div');
+        emergencyDiv.className = "bg-slate-800/50 border border-slate-700/60 rounded-2xl p-4 space-y-3";
+
+        emergencyDiv.innerHTML = `
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-700/50">
+                <i class="fa-solid fa-triangle-exclamation text-rose-400 text-base"></i>
+                <h2 class="text-base font-bold uppercase tracking-wider text-white">Estado de Equipos / Averías</h2>
+            </div>
+            <div class="space-y-2">
+                <!-- TDS -->
+                <div class="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-2.5 rounded-xl">
+                    <span class="text-xs font-medium text-slate-200">Medidor TDS</span>
+                    <button onclick="toggleEmergency('tds')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${!emergencies.tds ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border-rose-500/40'}">
+                        ${!emergencies.tds ? '<i class="fa-solid fa-circle-check mr-1"></i> Operativo' : '<i class="fa-solid fa-triangle-exclamation mr-1"></i> Dañado'}
+                    </button>
+                </div>
+                <!-- Electrolisis -->
+                <div class="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-2.5 rounded-xl">
+                    <span class="text-xs font-medium text-slate-200">Electrólisis</span>
+                    <button onclick="toggleEmergency('electrolisis')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${!emergencies.electrolisis ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border-rose-500/40'}">
+                        ${!emergencies.electrolisis ? '<i class="fa-solid fa-circle-check mr-1"></i> Operativo' : '<i class="fa-solid fa-triangle-exclamation mr-1"></i> Dañado'}
+                    </button>
+                </div>
+                <!-- Cafetera -->
+                <div class="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-2.5 rounded-xl">
+                    <span class="text-xs font-medium text-slate-200">Cafetera</span>
+                    <button onclick="toggleEmergency('cafetera')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${!emergencies.cafetera ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border-rose-500/40'}">
+                        ${!emergencies.cafetera ? '<i class="fa-solid fa-circle-check mr-1"></i> Operativo' : '<i class="fa-solid fa-triangle-exclamation mr-1"></i> Dañado'}
+                    </button>
+                </div>
+            </div>
+        `;
+        container.appendChild(emergencyDiv);
+    }
+
+    function togglePurified() {
+        stock['agua-purificada'] = stock['agua-purificada'] === 1 ? 0 : 1;
+        localStorage.setItem('santom_stock', JSON.stringify(stock));
+        renderInventory();
+    }
+
+    function toggleEmergency(key) {
+        emergencies[key] = !emergencies[key];
+        localStorage.setItem('santom_emergencies', JSON.stringify(emergencies));
+        renderInventory();
+    }
+
+    function refillOzone() {
+        ozoneData.timestamp = new Date().getTime();
+        localStorage.setItem('santom_ozone', JSON.stringify(ozoneData));
+        updateOzoneUI();
+    }
+
+    function updateOzoneUI() {
+        const timerEl = document.getElementById('ozone-timer');
+        const percentEl = document.getElementById('ozone-percent');
+        const statusEl = document.getElementById('ozone-status');
+        if (!timerEl) return;
+
+        const totalDuration = 8 * 60 * 60 * 1000;
+
+        if (!ozoneData.timestamp) {
+            timerEl.innerText = "08:00:00";
+            percentEl.innerText = "100%";
+            statusEl.innerText = "Estado Óptimo";
+            statusEl.className = "px-2 py-0.5 rounded-md font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+            return;
+        }
+
+        let elapsed = new Date().getTime() - ozoneData.timestamp;
+        let remaining = totalDuration - elapsed;
+
+        if (remaining <= 0) {
+            timerEl.innerText = "00:00:00";
+            percentEl.innerText = "0%";
+            statusEl.innerText = "No recomendado";
+            statusEl.className = "px-2 py-0.5 rounded-md font-semibold bg-red-500/20 text-red-400 border border-red-500/30";
+            return;
+        }
+
+        let percent = Math.max(0, Math.floor((remaining / totalDuration) * 100));
+        percentEl.innerText = percent + "%";
+
+        let hours = Math.floor(remaining / (1000 * 60 * 60));
+        let minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+        let seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+        timerEl.innerText = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+        let elapsedHours = elapsed / (1000 * 60 * 60);
+        if (elapsedHours < 3) {
+            statusEl.innerText = "Estado Óptimo";
+            statusEl.className = "px-2 py-0.5 rounded-md font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+        } else if (elapsedHours < 6) {
+            statusEl.innerText = "Cargado (Activo)";
+            statusEl.className = "px-2 py-0.5 rounded-md font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30";
+        } else {
+            statusEl.innerText = "No recomendado";
+            statusEl.className = "px-2 py-0.5 rounded-md font-semibold bg-red-500/20 text-red-400 border border-red-500/30";
+        }
+    }
+
+    function updateValue(id, delta) {
+        stock[id] = Math.max(0, (stock[id] || 0) + delta);
+        document.getElementById(`input-${id}`).value = stock[id];
+        localStorage.setItem('santom_stock', JSON.stringify(stock));
+    }
+
+    function manualInput(id) {
+        stock[id] = Math.max(0, parseInt(document.getElementById(`input-${id}`).value) || 0);
+        localStorage.setItem('santom_stock', JSON.stringify(stock));
+    }
+
+    function resetStock() {
+        if(confirm("¿Seguro que quieres reiniciar todo a 0?")) {
+            Object.keys(stock).forEach(k => stock[k] = 0);
+            ozoneData.timestamp = null;
+            emergencies = { tds: false, electrolisis: false, cafetera: false };
+            localStorage.setItem('santom_stock', JSON.stringify(stock));
+            localStorage.setItem('santom_ozone', JSON.stringify(ozoneData));
+            localStorage.setItem('santom_emergencies', JSON.stringify(emergencies));
+            renderInventory();
+        }
+    }
+
+    window.onload = () => {
+        renderInventory();
+        setInterval(updateOzoneUI, 1000);
+    };
+</script>
+</body>
+</html>
